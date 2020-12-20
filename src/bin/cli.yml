@@ -1,0 +1,32 @@
+name: kvs
+version: "0.1.0"
+author: kaifoon <zerco@foxmail.com>
+about: A Key Value Store Machine
+subcommands:
+    - set:
+        about: Set the value of a string key to a string
+        version: "0.1.0"
+        author: kaifoon <zerco@foxmail.com>
+        args: 
+            - KEY:
+                help: A string key 
+                required: true
+            - VALUE:
+                help: The string value of the key 
+                required: true
+    - get:
+        about: Get the string value of a given string key 
+        version: "0.1.0"
+        author: kaifoon <zerco@foxmail.com>
+        args: 
+            - KEY:
+                help: A string key 
+                required: true
+    - rm:
+        about: Remove a given key
+        version: "0.1.0"
+        author: kaifoon <zerco@foxmail.com>
+        args: 
+            - KEY:
+                help: A string key 
+                required: true
