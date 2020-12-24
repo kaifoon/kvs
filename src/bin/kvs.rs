@@ -1,7 +1,10 @@
 extern crate clap;
 use clap::{App, AppSettings, Arg, SubCommand};
+use kvs::{KvsError, KvStore, Result};
+use std::env::current_dir;
+use std::process::exit;
 
-fn main() {
+fn main() -> Result<()> {
     let matches = App::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
@@ -31,18 +34,38 @@ fn main() {
         .get_matches();
 
     match matches.subcommand() {
-        ("set", Some(sub_m)) => 
-           unimplemented!("unimplemented"),
-          /* println!(
-           *   "{} -> {}",
-           *   sub_m.value_of("KEY").expect("KEY argument missing"),
-           *   sub_m.value_of("VALUE").expect("VALUE argument missing")) */
-        ("get", Some(sub_m)) => {
-           unimplemented!("unimplemented")
-//            println!("{}", sub_m.value_of("KEY").expect("KEY argument missing"))
+        ("set", Some(sub_m)) => {
+            let key = sub_m.value_of("KEY").expect("KEY argument missing");
+            let value = sub_m.value_of("VALUE").expect("VALUE argument missing");
+
+            let mut store = KvStore::open(current_dir()?)?;
+            store.set(key.to_owned(), value.to_owned())?;
         }
-        ("rm", Some(sub_m)) => unimplemented!("unimplemented"),
-          //println!("{}", sub_m.value_of("KEY").expect("KEY argument missing")),
+        ("get", Some(sub_m)) => {
+            let key = sub_m.value_of("KEY").expect("KEY argument missing");
+
+            let mut store = KvStore::open(current_dir()?)?;
+            
+            match store.get(key.to_owned())? {
+              Some(val) => println!("{}", val),
+              None => println!("Key not found"),
+            }
+
+        }
+        ("rm", Some(sub_m)) => {
+            let key = sub_m.value_of("KEY").expect("KEY argument missing");
+
+            let mut store = KvStore::open(current_dir()?)?;
+            match store.remove(key.to_owned()) {
+              Ok(()) => {},
+              Err(KvsError::KeyNotFound) => {
+                println!("Key not found");
+                exit(1);
+              },
+              Err(e) => return Err(e),
+            }
+        }
         _ => unreachable!(),
     }
+    Ok(())
 }
