@@ -1,8 +1,5 @@
-extern crate clap;
 use clap::{App, AppSettings, Arg, SubCommand};
-use kvs::{KvsError, KvStore, Result};
-use std::env::current_dir;
-use std::process::exit;
+use kvs::{KvsClient, Result};
 
 fn main() -> Result<()> {
     let matches = App::new(env!("CARGO_PKG_NAME"))
@@ -11,6 +8,13 @@ fn main() -> Result<()> {
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .setting(AppSettings::DisableHelpSubcommand)
         .setting(AppSettings::SubcommandRequiredElseHelp)
+        .arg(
+            Arg::with_name("addr")
+                .takes_value(true)
+                .short("a")
+                .long("addr")
+                .help("An IP address with the format IP:PORT.default 127.0.0.1:4000."),
+        )
         .subcommand(
             SubCommand::with_name("set")
                 .about("Set the value of a string key to a string")
@@ -33,37 +37,29 @@ fn main() -> Result<()> {
         )
         .get_matches();
 
+    // IP Addr
+    let addr = matches.value_of("addr").unwrap_or("127.0.0.1:4000");
+    let mut client = KvsClient::connect(addr)?;
+
     match matches.subcommand() {
         ("set", Some(sub_m)) => {
             let key = sub_m.value_of("KEY").expect("KEY argument missing");
             let value = sub_m.value_of("VALUE").expect("VALUE argument missing");
 
-            let mut store = KvStore::open(current_dir()?)?;
-            store.set(key.to_owned(), value.to_owned())?;
+            client.set(key.to_string(), value.to_string())?;
         }
         ("get", Some(sub_m)) => {
             let key = sub_m.value_of("KEY").expect("KEY argument missing");
 
-            let mut store = KvStore::open(current_dir()?)?;
-            
-            match store.get(key.to_owned())? {
-              Some(val) => println!("{}", val),
-              None => println!("Key not found"),
+            if let Some(value) = client.get(key.to_string())? {
+                println!("{}", value);
+            } else {
+                println!("Key not found");
             }
-
         }
         ("rm", Some(sub_m)) => {
             let key = sub_m.value_of("KEY").expect("KEY argument missing");
-
-            let mut store = KvStore::open(current_dir()?)?;
-            match store.remove(key.to_owned()) {
-              Ok(()) => {},
-              Err(KvsError::KeyNotFound) => {
-                println!("Key not found");
-                exit(1);
-              },
-              Err(e) => return Err(e),
-            }
+            client.remove(key.to_string())?;
         }
         _ => unreachable!(),
     }

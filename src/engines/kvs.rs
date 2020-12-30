@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
@@ -8,9 +8,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Deserializer;
 
-use crate::{KvsError, Result};
+use crate::{KvsEngine, KvsError, Result};
 
 const COMPACTION_THRESHOLD: u64 = 1 << 20;
+const CACHE_LEN: usize = 1 << 10;
 
 /// The `KvStore` stores string key/value pairs.
 ///
@@ -22,6 +23,7 @@ const COMPACTION_THRESHOLD: u64 = 1 << 20;
 /// # use kvs::{KvStore, Result};
 /// # fn try_main() -> Result<()> {
 /// use std::env::current_dir;
+/// use kvs::KvsEngine;
 /// let mut store = KvStore::open(current_dir()?)?;
 /// store.set("key".to_owned(), "value".to_owned())?;
 /// let val = store.get("key".to_owned())?;
@@ -42,6 +44,8 @@ pub struct KvStore {
     // the number of bytes representing "stable" commands that could be
     // deleted during a compaction.
     uncompacted: u64,
+    // LRUCache
+    cache: LRUCache,
 }
 
 impl KvStore {
@@ -70,6 +74,7 @@ impl KvStore {
 
         let current_gen = gen_list.last().unwrap_or(&0) + 1;
         let writer = new_log_file(&path, current_gen, &mut readers)?;
+        let cache = LRUCache::new(CACHE_LEN);
 
         Ok(Self {
             path,
@@ -78,88 +83,8 @@ impl KvStore {
             current_gen,
             index,
             uncompacted,
+            cache,
         })
-    }
-    /// Sets the value of a string key to a string.
-    ///
-    /// If the key already exists, the previous value will be overwritten.
-    ///
-    /// # Errors
-    ///
-    /// It propagates I/O or serialization errors during writing the log.
-    pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        let cmd = Command::set(key, value);
-        let pos = self.writer.pos;
-
-        serde_json::to_writer(&mut self.writer, &cmd)?;
-        self.writer.flush()?;
-
-        if let Command::Set { key, .. } = cmd {
-            if let Some(old_cmd) = self
-                .index
-                .insert(key, (self.current_gen, pos..self.writer.pos).into())
-            {
-                self.uncompacted += old_cmd.len;
-            }
-        }
-
-        if self.uncompacted > COMPACTION_THRESHOLD {
-            self.compact()?;
-        }
-
-        Ok(())
-    }
-
-    /// Gets the string value of a given string key.
-    ///
-    /// Returns `None` if the given key does not exist.
-    ///
-    /// # Errors
-    ///
-    /// It returns `KvsError::UnexpectedCommandType` if the given command type unexpected.
-    pub fn get(&mut self, key: String) -> Result<Option<String>> {
-        match self.index.get(&key) {
-            Some(cmd_pos) => {
-                let reader = self
-                    .readers
-                    .get_mut(&cmd_pos.gen)
-                    .expect("Cannot find log reader");
-
-                reader.seek(SeekFrom::Start(cmd_pos.pos))?;
-                let cmd_reader = reader.take(cmd_pos.len);
-                if let Command::Set { value, .. } = serde_json::from_reader(cmd_reader)? {
-                    Ok(Some(value))
-                } else {
-                    Err(KvsError::UnexpectedCommandType)
-                }
-            }
-            None => Ok(None),
-        }
-    }
-
-    /// Remove a given key.
-    ///
-    /// # Errors
-    ///
-    /// It returns `KvsError::KeyNotFound` if the given key is not found
-    ///
-    /// It propagates I/O or serialization errors during writing the log.
-    pub fn remove(&mut self, key: String) -> Result<()> {
-        if self.index.contains_key(&key) {
-            let cmd = Command::remove(key);
-
-            serde_json::to_writer(&mut self.writer, &cmd)?;
-            self.writer.flush()?;
-
-            if let Command::Remove { key } = cmd {
-                let old_cmd = self.index.remove(&key).expect("key not found");
-                self.uncompacted += old_cmd.len;
-            }
-
-            Ok(())
-        } else {
-            Err(KvsError::KeyNotFound)
-        }
     }
 
     /// Clears stale entries in the log
@@ -215,6 +140,98 @@ impl KvStore {
     }
 }
 
+impl KvsEngine for KvStore {
+    /// Sets the value of a string key to a string.
+    ///
+    /// If the key already exists, the previous value will be overwritten.
+    /// # Errors
+    ///
+    /// It propagates I/O or serialization errors during writing the log.
+    fn set(&mut self, key: String, value: String) -> Result<()> {
+        // set cache `key-value` first;
+        self.cache.set(key.clone(), value.clone());
+
+        let cmd = Command::set(key, value);
+        let pos = self.writer.pos;
+
+        serde_json::to_writer(&mut self.writer, &cmd)?;
+        self.writer.flush()?;
+
+        if let Command::Set { key, .. } = cmd {
+            if let Some(old_cmd) = self
+                .index
+                .insert(key, (self.current_gen, pos..self.writer.pos).into())
+            {
+                self.uncompacted += old_cmd.len;
+            }
+        }
+
+        if self.uncompacted > COMPACTION_THRESHOLD {
+            self.compact()?;
+        }
+
+        Ok(())
+    }
+
+    /// Gets the string value of a given string key.
+    ///
+    /// Returns `None` if the given key does not exist.
+    ///
+    /// # Errors
+    ///
+    /// It returns `KvsError::UnexpectedCommandType` if the given command type unexpected.
+    fn get(&mut self, key: String) -> Result<Option<String>> {
+        // get `value` from cache first
+        if let Some(val) = self.cache.get(key.clone()) {
+            return Ok(Some(val));
+        }
+
+        match self.index.get(&key) {
+            Some(cmd_pos) => {
+                let reader = self
+                    .readers
+                    .get_mut(&cmd_pos.gen)
+                    .expect("Cannot find log reader");
+
+                reader.seek(SeekFrom::Start(cmd_pos.pos))?;
+                let cmd_reader = reader.take(cmd_pos.len);
+                if let Command::Set { value, .. } = serde_json::from_reader(cmd_reader)? {
+                    Ok(Some(value))
+                } else {
+                    Err(KvsError::UnexpectedCommandType)
+                }
+            }
+            None => Ok(None),
+        }
+    }
+    /// Remove a given key.
+    ///
+    /// # Errors
+    ///
+    /// It returns `KvsError::KeyNotFound` if the given key is not found
+    ///
+    /// It propagates I/O or serialization errors during writing the log.
+    fn remove(&mut self, key: String) -> Result<()> {
+        if self.index.contains_key(&key) {
+            // remove `key-value` cache first
+            self.cache.remove(key.clone());
+            let cmd = Command::remove(key);
+
+            serde_json::to_writer(&mut self.writer, &cmd)?;
+            self.writer.flush()?;
+
+            if let Command::Remove { key } = cmd {
+                let old_cmd = self.index.remove(&key).expect("key not found");
+                self.uncompacted += old_cmd.len;
+            }
+
+            Ok(())
+        } else {
+            Err(KvsError::KeyNotFound)
+        }
+    }
+}
+
 /// Create a new log file with given generation number and add the reader to the readers map.
 ///
 /// Returns the writer to the log.
@@ -237,6 +254,10 @@ fn new_log_file(
 }
 
 /// Returns sorted generation numbers in the given directory.
+///
+/// # Error
+/// path not exist return `io::error::Error`
+///
 fn sorted_gen_list(path: &Path) -> Result<Vec<u64>> {
     let mut gen_list: Vec<u64> = fs::read_dir(&path)?
         .flat_map(|res| -> Result<_> { Ok(res?.path()) })
@@ -390,5 +411,75 @@ impl<W: Write + Seek> Seek for BufWriterWithPos<W> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         self.pos = self.writer.seek(pos)?;
         Ok(self.pos)
+    }
+}
+
+/// Cache use LRU (Least Recented Used) evict policy
+struct LRUCache {
+    dq: VecDeque<String>,
+    map: HashMap<String, String>,
+    cap: usize,
+}
+
+impl LRUCache {
+    ///  Initialize the LRU cache with positive size `capacity` .
+    fn new(capacity: usize) -> Self {
+        Self {
+            dq: VecDeque::with_capacity(capacity),
+            map: HashMap::with_capacity(capacity),
+            cap: capacity,
+        }
+    }
+
+    ///  Return the value of the key if the key exists
+    fn get(&mut self, key: String) -> Option<String> {
+        if let Some(n) = self.dq.iter().position(|x| x == &key) {
+            self.dq.remove(n);
+        }
+
+        let val = self.map.get(&key).map(|s| s.to_string());
+        self.dq.push_front(key);
+
+        val
+    }
+
+    /// Update the value of the `key` if the `key` exists. Otherwise,
+    /// add the `key-value` pair to the cache. If the number of keys exceeds the `capacity` from
+    /// this operation, evict the least recently used key.
+    fn set(&mut self, key: String, value: String) {
+        if let Some(n) = self.dq.iter().position(|x| x == &key) {
+            self.dq.remove(n);
+        }
+
+        if self.cap == self.map.len() {
+            if let Some(key) = self.dq.pop_back() {
+                self.map.remove(&key);
+            }
+        }
+
+        self.dq.push_front(key.clone());
+        self.map.insert(key, value);
+    }
+
+    /// Remove key-value when `KvStore::remove` method called
+    fn remove(&mut self, key: String) {
+        if let Some(n) = self.dq.iter().position(|x| x == &key) {
+            self.dq.remove(n);
+        }
+        self.map.remove(&key);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore]
+    fn test_gen_sort_list() -> Result<()> {
+        use std::env::current_dir;
+        let ret = sorted_gen_list(&current_dir()?)?;
+        assert_eq!(ret, vec![1, 2, 3, 4, 5]);
+        Ok(())
     }
 }

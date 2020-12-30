@@ -1,0 +1,12 @@
+[[layers]]
+name = 'lang#rust'
+
+[[layers]]
+name = 'lsp'
+filetypes=[
+  "rust"
+]
+[layers.override_cmd]
+  rust=["rls"]
+
+

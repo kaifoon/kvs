@@ -1,7 +1,13 @@
 #![deny(missing_docs)]
 //! key value store lib
-pub use kv::KvStore;
+pub use engines::{KvStore, SledStore, KvsEngine};
 pub use error::{KvsError, Result};
+pub use server::KvsServer;
+pub use client::KvsClient;
 
-mod kv;
+mod engines;
 mod error;
+mod server;
+mod client;
+mod common;
+
