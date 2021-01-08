@@ -2,6 +2,7 @@ use std::io;
 use thiserror::Error;
 use std::string::FromUtf8Error;
 use std::str::Utf8Error;
+use std::sync::mpsc::RecvError;
 
 /// Error type for kvs.
 #[derive(Error, Debug)]
@@ -31,6 +32,9 @@ pub enum KvsError {
   /// Test Error From str slice utf8
   #[error("Str slice UTF-8 error: {0}")]
   StrUtf8(#[from] Utf8Error),
+  /// Test Error Channel recv method
+  #[error("Sending half of a channel is disconnected error")]
+  Channel(#[from] RecvError),
 }
 
 /// Result type for kvs. 

@@ -7,7 +7,6 @@ use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
 
-
 // `kvs-client` with no args should exit with a non-zero code.
 #[test]
 fn client_cli_no_args() {
@@ -35,7 +34,7 @@ fn client_cli_invalid_get() {
 
     Command::cargo_bin("kvs-client")
         .unwrap()
-        .args(&["get", "key", "--addr", "invalid-addr"])
+        .args(&["--addr", "invalid-addr", "get", "key"])
         .current_dir(&temp_dir)
         .assert()
         .failure();
@@ -74,7 +73,7 @@ fn client_cli_invalid_set() {
 
     Command::cargo_bin("kvs-client")
         .unwrap()
-        .args(&["set", "key", "value", "--addr", "invalid-addr"])
+        .args(&["--addr", "invalid-addr", "set", "key", "value"])
         .current_dir(&temp_dir)
         .assert()
         .failure();
@@ -106,7 +105,7 @@ fn client_cli_invalid_rm() {
 
     Command::cargo_bin("kvs-client")
         .unwrap()
-        .args(&["rm", "key", "--addr", "invalid-addr"])
+        .args(&["--addr", "invalid-addr", "rm", "key"])
         .current_dir(&temp_dir)
         .assert()
         .failure();
@@ -158,7 +157,7 @@ fn cli_log_configuration() {
     let stderr_path = temp_dir.path().join("stderr");
     let mut cmd = Command::cargo_bin("kvs-server").unwrap();
     let mut child = cmd
-        .args(&["--engine", "kvs", "--addr", "127.0.0.1:4001"])
+        .args(&["--addr", "127.0.0.1:4001", "--engine", "kvs"])
         .current_dir(&temp_dir)
         .stderr(File::create(&stderr_path).unwrap())
         .spawn()
@@ -179,7 +178,7 @@ fn cli_wrong_engine() {
         let temp_dir = TempDir::new().unwrap();
         let mut cmd = Command::cargo_bin("kvs-server").unwrap();
         let mut child = cmd
-            .args(&["--engine", "sled", "--addr", "127.0.0.1:4002"])
+            .args(&["--addr", "127.0.0.1:4002", "--engine", "sled"])
             .current_dir(&temp_dir)
             .spawn()
             .unwrap();
@@ -187,7 +186,7 @@ fn cli_wrong_engine() {
         child.kill().expect("server exited before killed");
 
         let mut cmd = Command::cargo_bin("kvs-server").unwrap();
-        cmd.args(&["--engine", "kvs", "--addr", "127.0.0.1:4003"])
+        cmd.args(&["--addr", "127.0.0.1:4003", "--engine", "kvs"])
             .current_dir(&temp_dir)
             .assert()
             .failure();
@@ -198,7 +197,7 @@ fn cli_wrong_engine() {
         let temp_dir = TempDir::new().unwrap();
         let mut cmd = Command::cargo_bin("kvs-server").unwrap();
         let mut child = cmd
-            .args(&["--engine", "kvs", "--addr", "127.0.0.1:4002"])
+        .args(&["--addr", "127.0.0.1:4002", "--engine", "kvs"])
             .current_dir(&temp_dir)
             .spawn()
             .unwrap();
@@ -206,7 +205,7 @@ fn cli_wrong_engine() {
         child.kill().expect("server exited before killed");
 
         let mut cmd = Command::cargo_bin("kvs-server").unwrap();
-        cmd.args(&["--engine", "sled", "--addr", "127.0.0.1:4003"])
+        cmd.args(&["--addr", "127.0.0.1:4003", "--engine", "sled"])
             .current_dir(&temp_dir)
             .assert()
             .failure();
@@ -336,4 +335,3 @@ fn cli_access_server_kvs_engine() {
 fn cli_access_server_sled_engine() {
     cli_access_server("sled", "127.0.0.1:4005");
 }
-

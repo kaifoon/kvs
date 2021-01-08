@@ -1,5 +1,7 @@
 use clap::{App, Arg};
+use kvs::thread_pool::*;
 use kvs::*;
+use num_cpus;
 
 #[macro_use]
 extern crate slog;
@@ -12,6 +14,7 @@ use std::net::SocketAddr;
 use std::process::exit;
 
 use slog::Drain;
+use std::thread;
 
 const DEFAULT_ADDR: &str = "127.0.0.1:4000";
 const DEFAULT_ENGINE: &str = "kvs";
@@ -84,7 +87,7 @@ fn run(engine: &str, addr: &str, logger: slog::Logger) -> Result<()> {
     let addr = addr.parse::<SocketAddr>().unwrap();
 
     if engine == "kvs" {
-        run_with_engine(KvStore::open(current_dir()?)?, addr, logger)
+        run_with_engine(KvStore::open(current_dir()?, logger.clone())?, addr, logger)
     } else if engine == "sled" {
         run_with_engine(
             SledStore::new(sled::open(current_dir()?.join("sled_store"))?),
@@ -97,8 +100,12 @@ fn run(engine: &str, addr: &str, logger: slog::Logger) -> Result<()> {
 }
 
 fn run_with_engine<E: KvsEngine>(engine: E, addr: SocketAddr, logger: slog::Logger) -> Result<()> {
-    let server = KvsServer::new(engine, logger);
-    server.run(addr)
+    let pool = RayonThreadPool::new(num_cpus::get() as u32, logger.clone())?;
+    let mut server = KvsServer::new(engine, logger, pool);
+    server.run(addr)?;
+    loop {
+      thread::park()
+    }
 }
 
 fn current_engine(logger: &slog::Logger) -> Result<Option<String>> {

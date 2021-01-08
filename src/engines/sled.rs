@@ -2,6 +2,7 @@ use crate::{KvsEngine, KvsError, Result};
 use sled::{Db, Tree};
 
 /// The `SledStore` stores string key/value pairs.
+#[derive(Clone)]
 pub struct SledStore(Db);
 
 impl SledStore {
@@ -24,7 +25,7 @@ impl KvsEngine for SledStore {
     /// # Errors
     ///
     /// It propagates I/O or serialization errors during writing the log.
-    fn set(&mut self, key: String, value: String) -> Result<()> {
+    fn set(&self, key: String, value: String) -> Result<()> {
         let tree: &Tree = &self.0;
         tree.insert(key.into_bytes(), value.into_bytes())?;
         tree.flush()?;
@@ -37,7 +38,7 @@ impl KvsEngine for SledStore {
     /// # Errors
     ///
     /// It returns `KvsError::UnexpectedCommandType` if the given command type unexpected.
-    fn get(&mut self, key: String) -> Result<Option<String>> {
+    fn get(&self, key: String) -> Result<Option<String>> {
         let tree: &Tree = &self.0;
 
         Ok(tree
@@ -53,7 +54,7 @@ impl KvsEngine for SledStore {
     /// It returns `KvsError::KeyNotFound` if the given key is not found
     ///
     /// It propagates I/O or serialization errors during writing the log.
-    fn remove(&mut self, key: String) -> Result<()> {
+    fn remove(&self, key: String) -> Result<()> {
         let tree: &Tree = &self.0;
         tree.remove(key.into_bytes())?
             .ok_or(KvsError::KeyNotFound)?;

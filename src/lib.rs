@@ -10,4 +10,6 @@ mod error;
 mod server;
 mod client;
 mod common;
+/// ThreadPool lib
+pub mod thread_pool;
 
