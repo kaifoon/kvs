@@ -116,6 +116,50 @@ fn short_set_bench(c: &mut Criterion) {
 
     write_group.finish();
 }
+fn short_get_bench(c: &mut Criterion) {
+    let mut read_group = c.benchmark_group("read");
+    let samples = generate_random_string(1000, 20);
+
+    read_group.bench_function("kvs", |b| {
+        let temp_dir = TempDir::new().unwrap();
+        let decorator = slog_term::TermDecorator::new().build();
+        let drain = slog_term::FullFormat::new(decorator).build().fuse();
+        let drain = std::sync::Mutex::new(drain).fuse();
+        let logger = slog::Logger::root(drain, slog::o!());
+        let store = KvStore::open(temp_dir.path(), logger).unwrap();
+        for keypair in samples.iter() {
+            store
+                .set(keypair.0.to_string(), keypair.1.to_string())
+                .unwrap();
+        }
+        let mut rng = thread_rng();
+        b.iter(|| {
+            let idx = rng.gen_range(0..1000);
+            store.get(samples[idx].0.to_string()).unwrap();
+        })
+    });
+    read_group.bench_function("sled", |b| {
+        let temp_dir = TempDir::new().unwrap();
+        let store = SledStore::new(
+            Config::new()
+                .path(temp_dir)
+                .temporary(true)
+                .flush_every_ms(None)
+                .open()
+                .unwrap(),
+        );
+        for keypair in samples.iter() {
+            store
+                .set(keypair.0.to_string(), keypair.1.to_string())
+                .unwrap();
+        }
+        let mut rng = thread_rng();
+        b.iter(|| {
+            let idx = rng.gen_range(0..1000);
+            store.get(samples[idx].0.to_string()).unwrap();
+        })
+    });
+}
 fn long_get_bench(c: &mut Criterion) {
     let mut read_group = c.benchmark_group("read");
     let samples = generate_random_string(100, 1000_0);
@@ -161,50 +205,6 @@ fn long_get_bench(c: &mut Criterion) {
     });
 }
 
-fn short_get_bench(c: &mut Criterion) {
-    let mut read_group = c.benchmark_group("read");
-    let samples = generate_random_string(1000, 20);
-
-    read_group.bench_function("kvs", |b| {
-        let temp_dir = TempDir::new().unwrap();
-        let decorator = slog_term::TermDecorator::new().build();
-        let drain = slog_term::FullFormat::new(decorator).build().fuse();
-        let drain = std::sync::Mutex::new(drain).fuse();
-        let logger = slog::Logger::root(drain, slog::o!());
-        let store = KvStore::open(temp_dir.path(), logger).unwrap();
-        for keypair in samples.iter() {
-            store
-                .set(keypair.0.to_string(), keypair.1.to_string())
-                .unwrap();
-        }
-        let mut rng = thread_rng();
-        b.iter(|| {
-            let idx = rng.gen_range(0..1000);
-            store.get(samples[idx].0.to_string()).unwrap();
-        })
-    });
-    read_group.bench_function("sled", |b| {
-        let temp_dir = TempDir::new().unwrap();
-        let store = SledStore::new(
-            Config::new()
-                .path(temp_dir)
-                .temporary(true)
-                .flush_every_ms(None)
-                .open()
-                .unwrap(),
-        );
-        for keypair in samples.iter() {
-            store
-                .set(keypair.0.to_string(), keypair.1.to_string())
-                .unwrap();
-        }
-        let mut rng = thread_rng();
-        b.iter(|| {
-            let idx = rng.gen_range(0..1000);
-            store.get(samples[idx].0.to_string()).unwrap();
-        })
-    });
-}
 
 fn generate_random_string(n: usize, len: usize) -> Vec<(String, String)> {
     let mut rng = thread_rng();

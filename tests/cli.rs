@@ -15,37 +15,6 @@ fn client_cli_no_args() {
     cmd.current_dir(&temp_dir).assert().failure();
 }
 
-#[test]
-fn client_cli_invalid_get() {
-    let temp_dir = TempDir::new().unwrap();
-    Command::cargo_bin("kvs-client")
-        .unwrap()
-        .args(&["get"])
-        .current_dir(&temp_dir)
-        .assert()
-        .failure();
-
-    Command::cargo_bin("kvs-client")
-        .unwrap()
-        .args(&["get", "extra", "field"])
-        .current_dir(&temp_dir)
-        .assert()
-        .failure();
-
-    Command::cargo_bin("kvs-client")
-        .unwrap()
-        .args(&["--addr", "invalid-addr", "get", "key"])
-        .current_dir(&temp_dir)
-        .assert()
-        .failure();
-
-    Command::cargo_bin("kvs-client")
-        .unwrap()
-        .args(&["get", "key", "--unknown-flag"])
-        .current_dir(&temp_dir)
-        .assert()
-        .failure();
-}
 
 #[test]
 fn client_cli_invalid_set() {
@@ -86,6 +55,37 @@ fn client_cli_invalid_set() {
         .failure();
 }
 
+#[test]
+fn client_cli_invalid_get() {
+    let temp_dir = TempDir::new().unwrap();
+    Command::cargo_bin("kvs-client")
+        .unwrap()
+        .args(&["get"])
+        .current_dir(&temp_dir)
+        .assert()
+        .failure();
+
+    Command::cargo_bin("kvs-client")
+        .unwrap()
+        .args(&["get", "extra", "field"])
+        .current_dir(&temp_dir)
+        .assert()
+        .failure();
+
+    Command::cargo_bin("kvs-client")
+        .unwrap()
+        .args(&["--addr", "invalid-addr", "get", "key"])
+        .current_dir(&temp_dir)
+        .assert()
+        .failure();
+
+    Command::cargo_bin("kvs-client")
+        .unwrap()
+        .args(&["get", "key", "--unknown-flag"])
+        .current_dir(&temp_dir)
+        .assert()
+        .failure();
+}
 #[test]
 fn client_cli_invalid_rm() {
     let temp_dir = TempDir::new().unwrap();
