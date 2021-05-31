@@ -9,6 +9,16 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 // Note for Rust training course: the thread pool is not implemented using
 // `catch_unwind` because it would require the task to be `UnwindSafe`.
 
+fn run_tasks(tsk: TaskReceiver) {
+    loop {
+        match tsk.rx.recv() {
+            Ok(task) => {
+                task();
+            }
+            Err(_) => slog::debug!(tsk.logger, "Thread exits because the thread pool is destroyed."),
+        }
+    }
+}
 /// A thread pool using a shared queue inside.
 ///
 /// If a spawned task panics, the old thread will be destroyed and a new one will be
@@ -62,13 +72,3 @@ impl Drop for TaskReceiver {
     }
 }
 
-fn run_tasks(tsk: TaskReceiver) {
-    loop {
-        match tsk.rx.recv() {
-            Ok(task) => {
-                task();
-            }
-            Err(_) => slog::debug!(tsk.logger, "Thread exits because the thread pool is destroyed."),
-        }
-    }
-}

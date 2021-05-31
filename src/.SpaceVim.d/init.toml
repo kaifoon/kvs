@@ -1,12 +1,14 @@
-[[layers]]
-name = 'lang#rust'
+
+[options]
+  bootstrap_after  = "s:cargo_task"
 
 [[layers]]
-name = 'lsp'
-filetypes=[
-  "rust"
-]
-[layers.override_cmd]
-  rust=["rls"]
-
-
+  name = "autocomplete"
+  enable = false
+[[layers]]
+  name = "lsp"
+  filetypes = [
+    "rust"
+  ]
+  [layers.override_cmd]
+    rust = ["rust-analyzer"]

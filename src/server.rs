@@ -9,6 +9,7 @@ use slog;
 use slog_term;
 use slog::Drain;
 
+
 use std::io::{self, BufReader, BufWriter, Write};
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,6 +28,8 @@ pub struct KvsServer<E: KvsEngine, P: ThreadPool> {
 
 impl<E: KvsEngine, P: ThreadPool> KvsServer<E, P> {
     /// Create a `KvsServer` with a given storage engine.
+
+
     pub fn new(engine: E, logger: slog::Logger, pool: P) -> Self {
         Self {
             engine,
@@ -39,10 +42,12 @@ impl<E: KvsEngine, P: ThreadPool> KvsServer<E, P> {
 
     /// Run the server listening on the given address
     pub fn run(&mut self, addr: impl ToSocketAddrs) -> Result<()> {
+        
         let listener = TcpListener::bind(addr)?;
         listener.set_nonblocking(true)?;
-
+        
         let shutdown = self.shutdown.clone();
+
         let engine = self.engine.clone();
         let logger = self.logger.clone();
         let pool = self.pool.clone();

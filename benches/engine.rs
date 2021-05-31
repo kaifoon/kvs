@@ -15,6 +15,7 @@ use tempfile::TempDir;
 fn long_set_bench(c: &mut Criterion) {
     let mut write_group = c.benchmark_group("write");
 
+
     let samples = generate_random_string(100, 1000_0);
     write_group
         .bench_function("long-kvs", |b| {

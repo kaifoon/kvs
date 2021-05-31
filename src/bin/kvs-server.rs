@@ -82,7 +82,7 @@ fn run(engine: &str, addr: &str, logger: slog::Logger) -> Result<()> {
         addr
     );
     // write engine to engine file
-    fs::write(current_dir()?.join("engine"), format!("{}", engine))?;
+    fs::write(current_dir()?.join("engine"), engine.to_string())?;
     // parse address to SocketAddr Type, use `unwrap` method because of cli set default argument
     let addr = addr.parse::<SocketAddr>().unwrap();
 

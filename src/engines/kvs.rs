@@ -9,7 +9,6 @@ use std::sync::{
     Arc, Mutex,
 };
 
-use slog;
 
 use std::cell::RefCell;
 
@@ -22,6 +21,72 @@ use crate::{KvsEngine, KvsError, Result};
 const COMPACTION_THRESHOLD: u64 = 1 << 20;
 const CACHE_LEN: usize = 1 << 10;
 
+/// A single thread reader
+/// Each `KvStore` instance has its own `KvStoreReader` and
+/// `KvStoreReader`s open the same files separately. So the user
+/// can read concurrently through multiple `KvStore`s in different
+/// threads
+struct KvStoreReader {
+    path: Arc<PathBuf>,
+    // generation of the latest compaction file
+    safe_point: Arc<AtomicU64>,
+    readers: RefCell<BTreeMap<u64, BufReaderWithPos<File>>>,
+}
+
+impl KvStoreReader {
+    /// Close file handles with generation number less than safe_point
+    ///
+    /// `safe_point` is updated to the latest compaction gen after a compaction finishes.
+    /// The compaction generation contains the sum of all operations before it and the
+    /// in-memory index contains no entries with generation number less than safe_point.
+    /// So we can safely close those file handles and the stale files can be deleted.
+    fn close_stale_handles(&self) {
+        let mut readers = self.readers.borrow_mut();
+        while !readers.is_empty() {
+            let first_gen = *readers.keys().next().unwrap();
+            if self.safe_point.load(Ordering::SeqCst) <= first_gen {
+                break;
+            }
+            readers.remove(&first_gen);
+        }
+    }
+
+    fn read_and<F, R>(&self, cmd_pos: CommandPos, f: F) -> Result<R>
+    where
+        F: FnOnce(io::Take<&mut BufReaderWithPos<File>>) -> Result<R>,
+    {
+        // Open the file if we haven't opened it in this `KvStoreReader`.
+        // We don't use entry API here because we want the errors to be propogated.
+
+        let mut readers = self.readers.borrow_mut();
+        if !readers.contains_key(&cmd_pos.gen) {
+            let reader = BufReaderWithPos::new(File::open(log_path(&self.path, cmd_pos.gen))?)?;
+            readers.insert(cmd_pos.gen, reader);
+        }
+        let reader = readers
+            .get_mut(&cmd_pos.gen)
+            .expect("Cannot find log reader");
+        reader.seek(SeekFrom::Start(cmd_pos.pos))?;
+        let cmd_reader = reader.take(cmd_pos.len);
+        f(cmd_reader)
+    }
+
+    fn read_command(&self, cmd_pos: CommandPos) -> Result<Command> {
+        self.read_and(cmd_pos, |cmd_reader| {
+            Ok(serde_json::from_reader(cmd_reader)?)
+        })
+    }
+}
+
+impl Clone for KvStoreReader {
+    fn clone(&self) -> KvStoreReader {
+        KvStoreReader {
+            path: self.path.clone(),
+            safe_point: self.safe_point.clone(),
+            readers: RefCell::new(BTreeMap::new()),
+        }
+    }
+}
 /// The `KvStore` stores string key/value pairs.
 ///
 /// Key/Value pairs are stored in a `HashMap` in memory and not persisted to disk
@@ -174,72 +239,6 @@ impl KvsEngine for KvStore {
     }
 }
 
-/// A single thread reader
-/// Each `KvStore` instance has its own `KvStoreReader` and
-/// `KvStoreReader`s open the same files separately. So the user
-/// can read concurrently through multiple `KvStore`s in different
-/// threads
-struct KvStoreReader {
-    path: Arc<PathBuf>,
-    // generation of the latest compaction file
-    safe_point: Arc<AtomicU64>,
-    readers: RefCell<BTreeMap<u64, BufReaderWithPos<File>>>,
-}
-
-impl KvStoreReader {
-    /// Close file handles with generation number less than safe_point
-    ///
-    /// `safe_point` is updated to the latest compaction gen after a compaction finishes.
-    /// The compaction generation contains the sum of all operations before it and the
-    /// in-memory index contains no entries with generation number less than safe_point.
-    /// So we can safely close those file handles and the stale files can be deleted.
-    fn close_stale_handles(&self) {
-        let mut readers = self.readers.borrow_mut();
-        while !readers.is_empty() {
-            let first_gen = *readers.keys().next().unwrap();
-            if self.safe_point.load(Ordering::SeqCst) <= first_gen {
-                break;
-            }
-            readers.remove(&first_gen);
-        }
-    }
-
-    fn read_and<F, R>(&self, cmd_pos: CommandPos, f: F) -> Result<R>
-    where
-        F: FnOnce(io::Take<&mut BufReaderWithPos<File>>) -> Result<R>,
-    {
-        // Open the file if we haven't opened it in this `KvStoreReader`.
-        // We don't use entry API here because we want the errors to be propogated.
-
-        let mut readers = self.readers.borrow_mut();
-        if !readers.contains_key(&cmd_pos.gen) {
-            let reader = BufReaderWithPos::new(File::open(log_path(&self.path, cmd_pos.gen))?)?;
-            readers.insert(cmd_pos.gen, reader);
-        }
-        let reader = readers
-            .get_mut(&cmd_pos.gen)
-            .expect("Cannot find log reader");
-        reader.seek(SeekFrom::Start(cmd_pos.pos))?;
-        let cmd_reader = reader.take(cmd_pos.len);
-        f(cmd_reader)
-    }
-
-    fn read_command(&self, cmd_pos: CommandPos) -> Result<Command> {
-        self.read_and(cmd_pos, |cmd_reader| {
-            Ok(serde_json::from_reader(cmd_reader)?)
-        })
-    }
-}
-
-impl Clone for KvStoreReader {
-    fn clone(&self) -> KvStoreReader {
-        KvStoreReader {
-            path: self.path.clone(),
-            safe_point: self.safe_point.clone(),
-            readers: RefCell::new(BTreeMap::new()),
-        }
-    }
-}
 
 struct KvStoreWriter {
     reader: KvStoreReader,
