@@ -73,6 +73,16 @@ fn main() -> Result<()> {
     }
 }
 
+
+fn run_with_engine<E: KvsEngine>(engine: E, addr: SocketAddr, logger: slog::Logger) -> Result<()> {
+    let pool = RayonThreadPool::new(num_cpus::get() as u32, logger.clone())?;
+    let mut server = KvsServer::new(engine, logger, pool);
+    server.run(addr)?;
+    loop {
+      thread::park()
+    }
+}
+
 fn run(engine: &str, addr: &str, logger: slog::Logger) -> Result<()> {
     info!(
         logger,
@@ -98,16 +108,6 @@ fn run(engine: &str, addr: &str, logger: slog::Logger) -> Result<()> {
         Ok(())
     }
 }
-
-fn run_with_engine<E: KvsEngine>(engine: E, addr: SocketAddr, logger: slog::Logger) -> Result<()> {
-    let pool = RayonThreadPool::new(num_cpus::get() as u32, logger.clone())?;
-    let mut server = KvsServer::new(engine, logger, pool);
-    server.run(addr)?;
-    loop {
-      thread::park()
-    }
-}
-
 fn current_engine(logger: &slog::Logger) -> Result<Option<String>> {
     let engine = current_dir()?.join("engine");
     if !engine.exists() {

@@ -4,6 +4,7 @@ use rayon;
 use slog;
 use std::sync::Arc;
 
+
 /// Wrapper of rayon::ThreadPool
 #[derive(Clone)]
 pub struct RayonThreadPool(Arc<rayon::ThreadPool>);

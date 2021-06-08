@@ -28,8 +28,6 @@ pub struct KvsServer<E: KvsEngine, P: ThreadPool> {
 
 impl<E: KvsEngine, P: ThreadPool> KvsServer<E, P> {
     /// Create a `KvsServer` with a given storage engine.
-
-
     pub fn new(engine: E, logger: slog::Logger, pool: P) -> Self {
         Self {
             engine,
@@ -40,6 +38,12 @@ impl<E: KvsEngine, P: ThreadPool> KvsServer<E, P> {
         }
     }
 
+    /// Shutdown the server
+    pub fn shutdown(&mut self) {
+        self.shutdown.store(true, Ordering::Relaxed);
+        let handle = self.handle.take().unwrap();
+        handle.join().unwrap();
+    }
     /// Run the server listening on the given address
     pub fn run(&mut self, addr: impl ToSocketAddrs) -> Result<()> {
         
@@ -77,12 +81,6 @@ impl<E: KvsEngine, P: ThreadPool> KvsServer<E, P> {
 
         self.handle.replace(handle);
         Ok(())
-    }
-    /// Shutdown the server
-    pub fn shutdown(&mut self) {
-        self.shutdown.store(true, Ordering::Relaxed);
-        let handle = self.handle.take().unwrap();
-        handle.join().unwrap();
     }
 }
 

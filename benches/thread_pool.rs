@@ -22,14 +22,6 @@ const KEYLEN: usize = 10;
 const DEFAULT_ADDRESS: &str = "127.0.0.1:4000";
 const THREAD_NUMS: [u32; 6] = [1, 2, 4, 8, 16, 32];
 
-fn get_logger() -> slog::Logger {
-    let decorator = slog_term::TermDecorator::new().build();
-    let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    let drain = std::sync::Mutex::new(drain).fuse();
-    let logger = slog::Logger::root(drain, slog::o!());
-
-    logger
-}
 
 pub fn write_shared_queue_kvs(c: &mut Criterion) {
     let mut group = c.benchmark_group("write_shared_queue_kvs");
@@ -378,6 +370,15 @@ fn generate_random_string(n: usize, len: usize) -> Vec<(String, String)> {
     }
 
     samples
+}
+
+fn get_logger() -> slog::Logger {
+    let decorator = slog_term::TermDecorator::new().build();
+    let drain = slog_term::FullFormat::new(decorator).build().fuse();
+    let drain = std::sync::Mutex::new(drain).fuse();
+    let logger = slog::Logger::root(drain, slog::o!());
+
+    logger
 }
 
 criterion_group!(

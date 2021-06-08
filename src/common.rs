@@ -7,15 +7,16 @@ pub enum Request {
   Remove {key: String},
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub enum GetResponse {
-  Ok(Option<String>),
-  Err(String),
-}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub enum SetResponse {
   Ok(()),
+  Err(String),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum GetResponse {
+  Ok(Option<String>),
   Err(String),
 }
 
